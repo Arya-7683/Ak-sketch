@@ -20,6 +20,7 @@
       align-items: center;
       flex-direction: column;
       font-family: system-ui, sans-serif;
+      touch-action: none; /* Prevent browser from interfering with gestures */
     }
     video, #uploadedImage {
       position: fixed;
@@ -34,7 +35,8 @@
       z-index: 1;
       opacity: 0.5;
       transition: opacity 0.3s ease;
-      pointer-events: none;
+      pointer-events: none; /* Will be toggled for drag */
+      transform-origin: center center;
     }
     .controls {
       position: fixed;
@@ -120,9 +122,21 @@
     const flipBtn = document.getElementById('flipBtn');
     const controls = document.getElementById('controls');
 
-    let currentFacingMode = "environment"; // Start with back camera
+    let currentFacingMode = "environment";
     let currentStream;
     let controlsVisible = true;
+
+    // Transform state
+    let scale = 1;
+    let lastScale = 1;
+    let posX = 0, posY = 0;
+    let lastPosX = 0, lastPosY = 0;
+    let dragging = false;
+    let pinchStartDistance = 0;
+
+    function updateTransform() {
+      uploadedImage.style.transform = `translate(${posX}px, ${posY}px) scale(${scale})`;
+    }
 
     async function startCamera() {
       if (currentStream) {
@@ -142,25 +156,26 @@
       }
     }
 
-    // Flip camera between front and back
     flipBtn.addEventListener('click', () => {
       currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
       startCamera();
     });
 
-    // Handle image upload
     imageInput.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (file) {
         const reader = new FileReader();
         reader.onload = (ev) => {
           uploadedImage.src = ev.target.result;
+          uploadedImage.style.pointerEvents = "auto";
+          posX = posY = 0;
+          scale = 1;
+          updateTransform();
         };
         reader.readAsDataURL(file);
       }
     });
 
-    // Adjust image opacity
     opacityControl.addEventListener('input', () => {
       uploadedImage.style.opacity = opacityControl.value;
     });
@@ -173,11 +188,8 @@
 
     // Show/hide controls
     function toggleControls(show) {
-      if (show) {
-        controls.classList.remove('hidden');
-      } else {
-        controls.classList.add('hidden');
-      }
+      if (show) controls.classList.remove('hidden');
+      else controls.classList.add('hidden');
       controlsVisible = show;
     }
 
@@ -188,10 +200,63 @@
 
     // Tap anywhere to toggle controls
     document.addEventListener('click', (e) => {
-      // Ignore clicks inside the controls themselves
-      if (!controls.contains(e.target)) {
-        toggleControls(!controlsVisible);
+      if (!controls.contains(e.target)) toggleControls(!controlsVisible);
+    });
+
+    // Drag with mouse
+    uploadedImage.addEventListener('mousedown', (e) => {
+      dragging = true;
+      lastPosX = e.clientX - posX;
+      lastPosY = e.clientY - posY;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      posX = e.clientX - lastPosX;
+      posY = e.clientY - lastPosY;
+      updateTransform();
+    });
+
+    window.addEventListener('mouseup', () => dragging = false);
+
+    // Touch drag & pinch
+    uploadedImage.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        dragging = true;
+        lastPosX = e.touches[0].clientX - posX;
+        lastPosY = e.touches[0].clientY - posY;
+      } else if (e.touches.length === 2) {
+        dragging = false;
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        pinchStartDistance = Math.sqrt(dx * dx + dy * dy);
+        lastScale = scale;
       }
+    });
+
+    uploadedImage.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1 && dragging) {
+        posX = e.touches[0].clientX - lastPosX;
+        posY = e.touches[0].clientY - lastPosY;
+        updateTransform();
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        scale = Math.min(Math.max(lastScale * (distance / pinchStartDistance), 0.3), 5);
+        updateTransform();
+      }
+    }, { passive: false });
+
+    window.addEventListener('touchend', () => dragging = false);
+
+    // Zoom with mouse wheel
+    window.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      scale += e.deltaY * -0.001;
+      scale = Math.min(Math.max(scale, 0.3), 5);
+      updateTransform();
     });
 
     startCamera();
