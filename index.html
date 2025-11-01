@@ -1,16 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
-  <head>
-    <meta charset="UTF-8">
-    <title>Ai-Sketch</title>
-    
-
-  </head>
-    
-  <body>
-  <!DOCTYPE html>
-<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
@@ -62,6 +51,10 @@
       gap: 10px;
       z-index: 2;
       backdrop-filter: blur(6px);
+      transition: transform 0.4s ease;
+    }
+    .controls.hidden {
+      transform: translate(-50%, 150%);
     }
     .controls label {
       color: #fff;
@@ -107,7 +100,7 @@
   <video id="camera" autoplay playsinline></video>
   <img id="uploadedImage" />
   
-  <div class="controls">
+  <div class="controls" id="controls">
     <label>
       📁 Image
       <input type="file" id="imageInput" accept="image/*">
@@ -125,13 +118,14 @@
     const uploadedImage = document.getElementById('uploadedImage');
     const opacityControl = document.getElementById('opacityControl');
     const flipBtn = document.getElementById('flipBtn');
+    const controls = document.getElementById('controls');
 
     let currentFacingMode = "environment"; // Start with back camera
     let currentStream;
+    let controlsVisible = true;
 
     async function startCamera() {
       if (currentStream) {
-        // Stop all previous tracks before switching
         currentStream.getTracks().forEach(track => track.stop());
       }
 
@@ -171,17 +165,36 @@
       uploadedImage.style.opacity = opacityControl.value;
     });
 
-    // Adjust video on resize
+    // Resize handling
     window.addEventListener('resize', () => {
       video.width = window.innerWidth;
       video.height = window.innerHeight;
     });
 
+    // Show/hide controls
+    function toggleControls(show) {
+      if (show) {
+        controls.classList.remove('hidden');
+      } else {
+        controls.classList.add('hidden');
+      }
+      controlsVisible = show;
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === "ArrowDown") toggleControls(false);
+      if (e.key === "ArrowUp") toggleControls(true);
+    });
+
+    // Tap anywhere to toggle controls
+    document.addEventListener('click', (e) => {
+      // Ignore clicks inside the controls themselves
+      if (!controls.contains(e.target)) {
+        toggleControls(!controlsVisible);
+      }
+    });
+
     startCamera();
   </script>
 </body>
-</html>
-    
-  </body>
-  
 </html>
