@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Camera Overlay App</title>
+  <title>Ai-Sketch Camera Overlay</title>
   <style>
     * {
       box-sizing: border-box;
@@ -20,7 +20,7 @@
       align-items: center;
       flex-direction: column;
       font-family: system-ui, sans-serif;
-      touch-action: none; /* Prevent browser from interfering with gestures */
+      touch-action: none;
     }
     video, #uploadedImage {
       position: fixed;
@@ -35,8 +35,8 @@
       z-index: 1;
       opacity: 0.5;
       transition: opacity 0.3s ease;
-      pointer-events: none; /* Will be toggled for drag */
       transform-origin: center center;
+      pointer-events: none;
     }
     .controls {
       position: fixed;
@@ -126,9 +126,8 @@
     let currentStream;
     let controlsVisible = true;
 
-    // Transform state
-    let scale = 1;
-    let lastScale = 1;
+    // Image transform values
+    let scale = 1, lastScale = 1;
     let posX = 0, posY = 0;
     let lastPosX = 0, lastPosY = 0;
     let dragging = false;
@@ -138,36 +137,60 @@
       uploadedImage.style.transform = `translate(${posX}px, ${posY}px) scale(${scale})`;
     }
 
+    // 📷 Start camera (stable, no flicker)
     async function startCamera() {
       if (currentStream) {
         currentStream.getTracks().forEach(track => track.stop());
       }
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: currentFacingMode },
+        const constraints = {
+          video: {
+            facingMode: currentFacingMode,
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            focusMode: "continuous",
+            advanced: [
+              { focusMode: "continuous" },
+              { exposureMode: "continuous" },
+              { whiteBalanceMode: "continuous" }
+            ]
+          },
           audio: false
-        });
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         currentStream = stream;
         video.srcObject = stream;
+
+        // Try to lock focus once
+        const [track] = stream.getVideoTracks();
+        const capabilities = track.getCapabilities?.();
+        if (capabilities?.focusMode && track.applyConstraints) {
+          await track.applyConstraints({
+            advanced: [{ focusMode: "continuous" }]
+          }).catch(() => {});
+        }
+
       } catch (err) {
         console.error("Camera error:", err);
         alert("Could not access camera. Please allow permissions.");
       }
     }
 
+    // Flip camera front/back
     flipBtn.addEventListener('click', () => {
       currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
       startCamera();
     });
 
+    // Upload image
     imageInput.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (file) {
         const reader = new FileReader();
         reader.onload = (ev) => {
           uploadedImage.src = ev.target.result;
-          uploadedImage.style.pointerEvents = "auto";
           posX = posY = 0;
           scale = 1;
           updateTransform();
@@ -176,14 +199,9 @@
       }
     });
 
+    // Adjust opacity
     opacityControl.addEventListener('input', () => {
       uploadedImage.style.opacity = opacityControl.value;
-    });
-
-    // Resize handling
-    window.addEventListener('resize', () => {
-      video.width = window.innerWidth;
-      video.height = window.innerHeight;
     });
 
     // Show/hide controls
@@ -198,28 +216,11 @@
       if (e.key === "ArrowUp") toggleControls(true);
     });
 
-    // Tap anywhere to toggle controls
     document.addEventListener('click', (e) => {
       if (!controls.contains(e.target)) toggleControls(!controlsVisible);
     });
 
-    // Drag with mouse
-    uploadedImage.addEventListener('mousedown', (e) => {
-      dragging = true;
-      lastPosX = e.clientX - posX;
-      lastPosY = e.clientY - posY;
-    });
-
-    window.addEventListener('mousemove', (e) => {
-      if (!dragging) return;
-      posX = e.clientX - lastPosX;
-      posY = e.clientY - lastPosY;
-      updateTransform();
-    });
-
-    window.addEventListener('mouseup', () => dragging = false);
-
-    // Touch drag & pinch
+    // --- Touch / Drag / Zoom Handling ---
     uploadedImage.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) {
         dragging = true;
@@ -229,7 +230,7 @@
         dragging = false;
         const dx = e.touches[1].clientX - e.touches[0].clientX;
         const dy = e.touches[1].clientY - e.touches[0].clientY;
-        pinchStartDistance = Math.sqrt(dx * dx + dy * dy);
+        pinchStartDistance = Math.hypot(dx, dy);
         lastScale = scale;
       }
     });
@@ -243,15 +244,27 @@
       } else if (e.touches.length === 2) {
         const dx = e.touches[1].clientX - e.touches[0].clientX;
         const dy = e.touches[1].clientY - e.touches[0].clientY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
+        const distance = Math.hypot(dx, dy);
         scale = Math.min(Math.max(lastScale * (distance / pinchStartDistance), 0.3), 5);
         updateTransform();
       }
     }, { passive: false });
 
-    window.addEventListener('touchend', () => dragging = false);
+    uploadedImage.addEventListener('touchend', () => dragging = false);
 
-    // Zoom with mouse wheel
+    // Desktop drag + scroll zoom
+    uploadedImage.addEventListener('mousedown', (e) => {
+      dragging = true;
+      lastPosX = e.clientX - posX;
+      lastPosY = e.clientY - posY;
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      posX = e.clientX - lastPosX;
+      posY = e.clientY - lastPosY;
+      updateTransform();
+    });
+    window.addEventListener('mouseup', () => dragging = false);
     window.addEventListener('wheel', (e) => {
       e.preventDefault();
       scale += e.deltaY * -0.001;
